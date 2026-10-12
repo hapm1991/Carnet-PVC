@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#153c36">
+<title>Carnet PVC · Recortador de pólizas</title>
+<style>
+:root{--ink:#173a35;--muted:#64736f;--line:#d7e0dc;--bg:#f3f6f4;--card:#fff;--accent:#176b57;--soft:#e7f2ed}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#172622;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{background:var(--ink);color:white;padding:22px 18px 20px}header h1{font-size:22px;margin:0 0 6px}header p{margin:0;color:#d8e6e0;font-size:14px;line-height:1.4}
+main{max-width:900px;margin:0 auto;padding:16px;display:grid;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 2px 8px #173a3508}
+h2{font-size:17px;margin:0 0 12px}.hint{color:var(--muted);font-size:13px;line-height:1.45}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,.filelabel{appearance:none;border:0;border-radius:11px;background:var(--accent);color:white;padding:12px 15px;font-weight:650;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-height:44px}
+button.secondary{background:var(--soft);color:var(--ink);border:1px solid #cfe2d9}button:disabled{opacity:.45;cursor:not-allowed}input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+select,input[type=number]{font:inherit;border:1px solid var(--line);border-radius:9px;padding:10px;background:white;color:#172622;max-width:100%}
+label{font-size:14px;font-weight:600;display:block;margin-bottom:6px}.field{display:grid;gap:6px;min-width:120px}
+#canvasWrap{position:relative;overflow:auto;max-height:68vh;background:#e9eeeb;border-radius:10px;padding:8px;touch-action:pan-x pan-y}
+#pdfCanvas{display:block;max-width:100%;height:auto;margin:0 auto;background:white;box-shadow:0 1px 5px #0002;touch-action:none}
+#overlay{position:absolute;border:2px solid #e14c36;background:#e14c3617;display:none;pointer-events:none;box-shadow:0 0 0 9999px #16201c20}
+.status{padding:10px 12px;border-radius:9px;background:#f2f6f4;color:#43544e;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+.status.error{background:#fff0ed;color:#922d1e}.status.ok{background:#e9f7ef;color:#145b37}
+#resultPreview{display:block;width:min(100%,500px);aspect-ratio:85.6/54;object-fit:contain;background:#eef1ef;border:1px dashed var(--line);border-radius:8px}
+.small{font-size:12px;color:var(--muted)}.step{display:inline-flex;width:25px;height:25px;border-radius:50%;background:var(--soft);color:var(--ink);align-items:center;justify-content:center;font-weight:700;margin-right:7px}
+@media(min-width:760px){main{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<header><h1>Carnet PVC</h1><p>Recorta el carnet que ya aparece en la póliza y expórtalo a tamaño de tarjeta bancaria, sin rediseñar su contenido.</p></header>
+<main>
+<section class="card wide">
+<h2><span class="step">1</span>Sube la póliza en PDF</h2>
+<div class="row">
+<label class="filelabel" for="pdfFile">Elegir PDF</label><input id="pdfFile" type="file" accept="application/pdf,.pdf">
+<div class="field"><label for="pageSelect">Página</label><select id="pageSelect" disabled><option>—</option></select></div>
+</div>
+<p class="hint">El archivo se procesa localmente en este navegador; no se envía a un servidor. Si la póliza tiene varias páginas, selecciona la que contiene el carnet.</p>
+<div id="status" class="status" role="status">Primero selecciona un PDF. Para cargar las bibliotecas se necesita conexión a internet.</div>
+</section>
+<section class="card wide">
+<h2><span class="step">2</span>Marca el área del carnet</h2>
+<p class="hint">Arrastra el dedo o el lápiz sobre la vista previa para encerrar únicamente el carnet. Amplía la vista si hace falta. El recorte no corrige ni altera los datos: conserva la imagen tal como aparece en el PDF.</p>
+<div id="canvasWrap"><canvas id="pdfCanvas"></canvas><div id="overlay"></div></div>
+<div class="row" style="margin-top:12px">
+<button id="resetBtn" class="secondary" disabled>Repetir selección</button>
+<button id="previewBtn" disabled>Preparar vista previa</button>
+</div>
+</section>
+<section class="card">
+<h2><span class="step">3</span>Vista previa del carnet</h2>
+<canvas id="resultPreview" width="856" height="540" aria-label="Vista previa del carnet recortado"></canvas>
+<p class="hint">Tamaño de salida: 85.6 × 54 mm. La proporción del recorte se ajusta a la tarjeta; procura seleccionar el carnet completo y evitar bordes externos.</p>
+</section>
+<section class="card">
+<h2><span class="step">4</span>Generar PDF para imprimir</h2>
+<div class="field" style="margin-bottom:12px"><label for="quality">Calidad de imagen</label>
+<select id="quality"><option value="0.98">Alta (recomendada)</option><option value="0.92">Archivo más ligero</option></select></div>
+<button id="exportBtn" disabled>Generar PDF 85.6 × 54 mm</button>
+<p class="hint" style="margin-top:12px">Al imprimir, elige “Tamaño real” o “100 %”; desactiva “Ajustar a página”. La impresora debe admitir tarjetas PVC y su método de alimentación debe ser compatible.</p>
+<div id="downloadArea" style="margin-top:10px"></div>
+</section>
+<section class="card wide">
+<h2>Importante</h2>
+<ul class="hint" style="padding-left:20px;line-height:1.6">
+<li>Esta versión recorta visualmente el carnet del PDF original; no verifica por sí sola si el recorte contiene todo el contenido oficial.</li>
+<li>Si las aseguradoras usan ubicaciones diferentes, repite la selección en cada póliza. No modifica el diseño ni sustituye la póliza completa.</li>
+<li>La calidad final depende de la resolución del PDF original. Si el carnet del PDF es una imagen de baja resolución, la tarjeta también puede verse pixelada.</li>
+<li>Antes de imprimir y entregar, confirma con la aseguradora que la reproducción en PVC está autorizada y que se mantienen los requisitos legales aplicables.</li>
+</ul>
+</section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script>
+(() => {
+ const $ = id => document.getElementById(id);
+ const fileInput=$('pdfFile'), pageSelect=$('pageSelect'), canvas=$('pdfCanvas'), ctx=canvas.getContext('2d');
+ const overlay=$('overlay'), wrap=$('canvasWrap'), status=$('status'), preview=$('resultPreview'), pctx=preview.getContext('2d');
+ let pdfDoc=null, renderScale=3, selection=null, dragging=false, start=null, sourceFileName='carnet';
+ let renderWidth=0, renderHeight=0, lastCrop=null;
+ if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+ function msg(text,type=''){status.className='status '+type;status.textContent=text}
+ function clearResult(){lastCrop=null;$('exportBtn').disabled=true;$('downloadArea').innerHTML='';pctx.clearRect(0,0,preview.width,preview.height)}
+ function canvasDisplayRect(){return canvas.getBoundingClientRect()}
+ function pointerPos(e){
+   const r=canvasDisplayRect();
+   return {x:Math.max(0,Math.min(canvas.width,(e.clientX-r.left)*(canvas.width/r.width))),
+           y:Math.max(0,Math.min(canvas.height,(e.clientY-r.top)*(canvas.height/r.height)))};
+ }
+ function updateOverlay(){
+   if(!selection){overlay.style.display='none';return}
+   const r=canvasDisplayRect(), wr=wrap.getBoundingClientRect();
+   overlay.style.display='block';
+   overlay.style.left=(r.left-wr.left+wrap.scrollLeft+selection.x*(r.width/canvas.width))+'px';
+   overlay.style.top=(r.top-wr.top+wrap.scrollTop+selection.y*(r.height/canvas.height))+'px';
+   overlay.style.width=(selection.w*(r.width/canvas.width))+'px';
+   overlay.style.height=(selection.h*(r.height/canvas.height))+'px';
+ }
+ canvas.addEventListener('pointerdown',e=>{
+   if(!pdfDoc)return; e.preventDefault(); canvas.setPointerCapture?.(e.pointerId);
+   dragging=true;start=pointerPos(e);selection={x:start.x,y:start.y,w:0,h:0};clearResult();updateOverlay();
+ });
+ canvas.addEventListener('pointermove',e=>{
+   if(!dragging||!start)return;e.preventDefault();const p=pointerPos(e);
+   selection={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)};updateOverlay();
+ });
+ function endDrag(){if(!dragging)return;dragging=false;start=null;if(selection && (selection.w<8||selection.h<8)){selection=null;overlay.style.display='none';msg('La selección es demasiado pequeña. Marca el carnet completo.','error')}else if(selection){msg('Área seleccionada. Revisa que incluya el carnet completo y pulsa “Preparar vista previa”.','ok')}}
+ canvas.addEventListener('pointerup',endDrag);canvas.addEventListener('pointercancel',endDrag);
+ wrap.addEventListener('scroll',updateOverlay);window.addEventListener('resize',updateOverlay);
+ async function renderPage(num){
+   const page=await pdfDoc.getPage(num), viewport=page.getViewport({scale:renderScale});
+   canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+   renderWidth=canvas.width;renderHeight=canvas.height;
+   await page.render({canvasContext:ctx,viewport}).promise;
+   selection=null;overlay.style.display='none';clearResult();
+   msg('Página '+num+' cargada. Arrastra sobre el carnet para seleccionarlo.','ok');
+   updateOverlay();
+ }
+ fileInput.addEventListener('change',async()=>{
+   clearResult();selection=null;pdfDoc=null;pageSelect.disabled=true;pageSelect.innerHTML='';
+   const file=fileInput.files?.[0];if(!file)return;
+   sourceFileName=file.name.replace(/\.pdf$/i,'').replace(/[^\w\-]+/g,'_')||'carnet';
+   if(!window.pdfjsLib||!window.PDFLib){msg('No se pudieron cargar las bibliotecas. Comprueba la conexión a internet y vuelve a abrir la app.','error');return}
+   try{
+     msg('Abriendo PDF…');
+     const data=await file.arrayBuffer();pdfDoc=await pdfjsLib.getDocument({data:new Uint8Array(data)}).promise;
+     for(let i=1;i<=pdfDoc.numPages;i++){const o=document.createElement('option');o.value=i;o.textContent='Página '+i;pageSelect.appendChild(o)}
+     pageSelect.disabled=false;await renderPage(1);
+   }catch(err){msg('No se pudo abrir el PDF. Comprueba que no esté protegido con contraseña. Detalle: '+err.message,'error')}
+ });
+ pageSelect.addEventListener('change',()=>{if(pdfDoc)renderPage(Number(pageSelect.value)).catch(e=>msg('Error al renderizar: '+e.message,'error'))});
+ $('resetBtn').addEventListener('click',()=>{selection=null;overlay.style.display='none';clearResult();msg('Marca nuevamente el carnet en la página.');});
+ $('previewBtn').addEventListener('click',()=>{
+   if(!selection||selection.w<8||selection.h<8){msg('Primero marca el área completa del carnet.','error');return}
+   try{
+     const crop=document.createElement('canvas');crop.width=Math.round(selection.w);crop.height=Math.round(selection.h);
+     crop.getContext('2d').drawImage(canvas,Math.round(selection.x),Math.round(selection.y),crop.width,crop.height,0,0,crop.width,crop.height);
+     // Fit to exact CR80 ratio; slight proportional adjustment may occur if selection is imprecise.
+     pctx.clearRect(0,0,preview.width,preview.height);
+     pctx.fillStyle='#fff';pctx.fillRect(0,0,preview.width,preview.height);
+     pctx.drawImage(crop,0,0,preview.width,preview.height);
+     lastCrop=crop;$('exportBtn').disabled=false;
+     msg('Vista previa lista. Comprueba que no falten textos, bordes, firma o elementos del formato oficial.','ok');
+   }catch(err){msg('No se pudo preparar el recorte: '+err.message,'error')}
+ });
+ $('exportBtn').addEventListener('click',async()=>{
+   if(!lastCrop)return;
+   try{
+     $('exportBtn').disabled=true;msg('Generando PDF…');
+     const quality=Number($('quality').value);
+     const blobData=await new Promise(resolve=>lastCrop.toBlob(resolve,'image/jpeg',quality));
+     if(!blobData)throw new Error('No se pudo crear la imagen del carnet');
+     const bytes=new Uint8Array(await blobData.arrayBuffer());
+     const out=await PDFLib.PDFDocument.create();
+     const page=out.addPage([85.6/25.4*72,54/25.4*72]);
+     const jpg=await out.embedJpg(bytes);
+     page.drawImage(jpg,{x:0,y:0,width:85.6/25.4*72,height:54/25.4*72});
+     const pdfBytes=await out.save();
+     const blob=new Blob([pdfBytes],{type:'application/pdf'}), url=URL.createObjectURL(blob);
+     $('downloadArea').innerHTML='';
+     const a=document.createElement('a');a.href=url;a.download=sourceFileName+'_carnet_85.6x54mm.pdf';a.textContent='Abrir / descargar PDF del carnet';a.style.display='inline-block';a.style.marginTop='8px';a.style.color='#176b57';a.style.fontWeight='700';a.style.padding='8px 0';
+     $('downloadArea').appendChild(a);
+     msg('PDF creado a 85.6 × 54 mm. En el diálogo de impresión selecciona tamaño real / 100 %.','ok');
+   }catch(err){msg('No se pudo generar el PDF: '+err.message,'error')}
+   finally{$('exportBtn').disabled=false}
+ });
+})();
+</script>
+</body>
+</html>
